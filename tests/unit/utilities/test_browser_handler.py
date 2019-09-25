@@ -46,10 +46,11 @@ class MockLogger:
 
 
 class MockDriver(object):
-    def __init__(self, window_width, window_height, scroll_height):
+    def __init__(self, window_width, window_height, scroll_height, save_screenshot_success=True):
         self.window_width = window_width
         self.window_height = window_height
         self.scroll_height = scroll_height
+        self.save_screenshot_success = save_screenshot_success
         self.screenshot_filename = ""
         self.num_resizes = 0
 
@@ -69,6 +70,7 @@ class MockDriver(object):
 
     def save_screenshot(self, file_name):
         self.screenshot_filename = file_name
+        return self.save_screenshot_success
 
 
 class MockBuiltIn:
@@ -117,42 +119,41 @@ def test_set_browser_size_not_maximized():
     assert_that(not context.browser.browser_is_maximised, "Browser was maximized but should not be")
 
 
-@mock.patch("builtins.print")
-@mock.patch("uitestcore.utilities.logger.Logger.create_log_file",
-            side_effect=MockLogger.create_log_file)
-def test_prepare_browser_enable_logger(mock_create_log_file, _mock_print):
-    context = MockContext(logging_flag=True)
-    context.config = MockConfig()
+@mock.patch("os.path.exists", side_effect=lambda *args: False)
+@mock.patch("os.makedirs")
+@mock.patch("uitestcore.utilities.browser_handler.get_current_datetime",
+            side_effect=lambda *args: datetime.strptime("2019-02-15_00.00.00.000000", "%Y-%m-%d_%H.%M.%S.%f"))
+def test_take_screenshot_save_file_success(mock_get_current_datetime, mock_makedirs, mock_path_exists):
+    driver = MockDriver(1024, 768, 2000, True)
 
-    BrowserHandler.prepare_browser(context)
+    result = BrowserHandler.take_screenshot(driver, "test_screenshot")
 
-    check_mocked_functions_called(mock_create_log_file)
-    assert_that(not context.logger.disabled, "The logger was disabled")
-    assert_that(context.logger.log_file_exists, "The log file was not created")
+    check_mocked_functions_called(mock_path_exists, mock_makedirs, mock_get_current_datetime)
+    assert_that(driver.screenshot_filename, equal_to("screenshots/2019-02-15_00.00.00.000000_test_screenshot.png"),
+                "The screenshot filename was incorrect")
+    assert_that(result, equal_to(True), "The screenshot should have been saved successfully")
 
 
-@mock.patch("builtins.print")
-def test_prepare_browser_disable_logger(_mock_print):
-    context = MockContext(logging_flag=False)
-    context.config = MockConfig()
+def test_take_screenshot_save_file_fail():
+    driver = MockDriver(1024, 768, 2000, False)
 
-    BrowserHandler.prepare_browser(context)
+    result = BrowserHandler.take_screenshot(driver, "test_screenshot")
 
-    assert_that(context.logger.disabled, "The logger was enabled")
-    assert_that(not context.logger.log_file_exists, "The log file was created")
+    check_mocked_functions_called()
+    assert_that(result, equal_to(False), "The screenshot should have failed to save")
 
 
 @mock.patch("os.path.exists", side_effect=lambda *args: False)
 @mock.patch("os.makedirs")
 @mock.patch("uitestcore.utilities.browser_handler.get_current_datetime",
             side_effect=lambda *args: datetime.strptime("2019-02-15_00.00.00.000000", "%Y-%m-%d_%H.%M.%S.%f"))
-def test_take_screenshot_save_file(mock_get_current_datetime, mock_makedirs, mock_path_exists):
+def test_take_screenshot_save_file_with_invalid_characters(mock_get_current_datetime, mock_makedirs, mock_path_exists):
     driver = MockDriver(1024, 768, 2000)
 
-    BrowserHandler.take_screenshot(driver, "test_screenshot")
+    BrowserHandler.take_screenshot(driver, "abc://test_screenshot")
 
     check_mocked_functions_called(mock_path_exists, mock_makedirs, mock_get_current_datetime)
-    assert_that(driver.screenshot_filename, equal_to("screenshots/2019-02-15_00.00.00.000000_test_screenshot.png"),
+    assert_that(driver.screenshot_filename, equal_to("screenshots/2019-02-15_00.00.00.000000_abc__test_screenshot.png"),
                 "The screenshot filename was incorrect")
 
 
